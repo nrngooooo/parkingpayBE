@@ -1,14 +1,31 @@
 from django.db import models
+from PIL import Image
+import pytesseract
 
-# Create your models here.
 class Car(models.Model):
-    car_plate = models.CharField(max_length=7, unique=True)  # License plate number
+    car_plate = models.CharField(max_length=7, unique=True, null=True, blank=True)  # License plate number
     entry_photo = models.ImageField(upload_to='car_photos/entry/', null=True, blank=True)  # Entry photo
     cropped_plate_photo = models.ImageField(upload_to='car_photos/cropped/', null=True, blank=True)  # Cropped plate photo
     is_employee_car = models.BooleanField(default=False)  # Whether the car belongs to an employee
 
+    def save(self, *args, **kwargs):
+        # Save entry photo and process cropped photo and car plate
+        super().save(*args, **kwargs)
+        if self.entry_photo:
+            # Simulate cropping (real cropping logic to be added)
+            cropped_path = f"media/car_photos/cropped/{self.entry_photo.name.split('/')[-1]}"
+            self.cropped_plate_photo = cropped_path
+
+            # Load the image and process with OCR
+            img = Image.open(self.entry_photo.path)
+            plate_text = pytesseract.image_to_string(img).strip().replace("\n", "")
+            self.car_plate = plate_text
+
+            # Save the updates
+            super().save(*args, **kwargs)
+
     def __str__(self):
-        return self.car_plate
+        return self.car_plate or "Unknown Car"
 
 class PaymentMethod(models.Model):
     method_name = models.CharField(max_length=50)  # Payment method name

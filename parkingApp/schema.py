@@ -2,12 +2,13 @@ from django.db import transaction
 import traceback
 from django.db.models import Q
 import graphene
-from parkingApp.models import *
+from .models import *
+from django.core.files.storage import default_storage
 from graphene_django import DjangoObjectType
 from graphene import Mutation
 import logging
 logger = logging.getLogger("main")
-from .utils import process_image  # Import the above utility function
+from datetime import datetime
 
 class CarType(DjangoObjectType):
     class Meta:
@@ -17,57 +18,45 @@ class ParkingSessionType(DjangoObjectType):
     class Meta:
         model = ParkingSession
 
-class VehicleEntryMutation(graphene.Mutation):
+class CreateParkingSession(graphene.Mutation):
     class Arguments:
-        photo = graphene.String(required=True)  # Base64 encoded image
+        car_plate = graphene.String(required=True)
+        entry_photo = graphene.String(required=False)  # The entry photo as a base64 or URL
 
-    car = graphene.Field(CarType)
-    parking_session = graphene.Field(ParkingSessionType)
+    session = graphene.Field(ParkingSessionType)
 
-    def mutate(self, info, photo):
-        from django.core.files.base import ContentFile
-        import base64
+    def mutate(self, info, car_plate, entry_photo=None):
+        # Create or get car by license plate number
+        car, created = Car.objects.get_or_create(car_plate=car_plate)
+        
+        # If there's an entry photo, save it
+        if entry_photo:
+            # Save the entry photo
+            # For simplicity, assuming the photo is base64, you'll need to handle base64 decoding
+            file_name = f"car_photos/entry/{car_plate}_entry.jpg"
+            photo = default_storage.save(file_name, entry_photo)
 
-        try:
-            # Decode the base64 image
-            format, imgstr = photo.split('data:image/jpeg;base64,')
-            ext = format.split('/')[-1]
-            photo_file = ContentFile(base64.b64decode(imgstr), name=f"entry.{ext}")
-            print("Image decoded successfully.")
-
-            # Process the image
-            try:
-                car_plate, cropped_plate_photo = process_image(photo_file)
-            except Exception as e:
-                print(f"Image processing failed: {e}")
-                raise Exception("Image processing failed. Please check the image.")
-
-            print(f"Car Plate: {car_plate}")
-
-            # Save or update car in the database
-            car, created = Car.objects.get_or_create(car_plate=car_plate)
-            car.entry_photo.save(f"entry_photo.{ext}", photo_file, save=False)
-            car.cropped_plate_photo.save("cropped_plate.jpg", cropped_plate_photo, save=False)
+            # Save the entry photo to the car object
+            car.entry_photo = photo
             car.save()
-            print("Car saved successfully.")
 
-            # Create a parking session
-            session = ParkingSession.objects.create(car=car)
-            print("Parking session created successfully.")
+        # Create a new ParkingSession
+        session = ParkingSession.objects.create(
+            car=car,
+            entry_time=datetime.now(),
+            exit_time=None,  # Exit time will be set later
+            duration=None,   # Duration will be calculated later
+        )
 
-            return VehicleEntryMutation(car=car, parking_session=session)
-
-        except Exception as e:
-            print(f"Mutation failed: {e}")
-            raise e
+        return CreateParkingSession(session=session)
 
 class Mutation(graphene.ObjectType):
-    vehicle_entry = VehicleEntryMutation.Field()
+    create_parking_session = CreateParkingSession.Field()
 
 class Query(graphene.ObjectType):
-    parking_sessions = graphene.List(ParkingSessionType)
+    all_sessions = graphene.List(ParkingSessionType)
 
-    def resolve_parking_sessions(self, info):
+    def resolve_all_sessions(self, info):
         return ParkingSession.objects.all()
     
 class AtomicSchema(graphene.Schema):

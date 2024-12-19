@@ -18,9 +18,9 @@ class PaymentMethod(models.Model):
 class ParkingSession(models.Model):
     car = models.ForeignKey(Car, on_delete=models.CASCADE)  # Related car
     entry_time = models.DateTimeField(auto_now_add=True)  # Entry time
-    exit_time = models.DateTimeField(null=True, blank=True)  # Exit time
     duration = models.IntegerField(null=True, blank=True)  # Parking duration in minutes
     paid_status = models.BooleanField(default=False)  # Payment status
+    exit_time = models.DateTimeField(null=True, blank=True)  # Exit time
     exit_photo = models.ImageField(upload_to='car_photos/exit/', null=True, blank=True)  # Exit photo
 
     def __str__(self):

@@ -59,14 +59,32 @@ class CreateEntryCarMutation(graphene.Mutation):
 
         return CreateEntryCarMutation(car=car, parking_session=parking_session)
 
-class Mutation(graphene.ObjectType):
-    create_entry_car = CreateEntryCarMutation.Field()
-
 class Query(graphene.ObjectType):
     all_sessions = graphene.List(ParkingSessionType)
 
+    # New Query: search_car_by_plate
+    search_car_by_plate = graphene.Field(
+        CarType,
+        car_plate=graphene.String(required=True),
+    )
+
     def resolve_all_sessions(self, info):
         return ParkingSession.objects.select_related("car").all()
+
+    def resolve_search_car_by_plate(self, info, car_plate):
+    # Validate car_plate format to ensure it's 4 digits
+        if not re.match(r"^\d{4}$", car_plate):
+            raise ValueError("Invalid format. Enter the first 4 digits of the car plate.")
+
+        # Search for the car by the first 4 digits of the car plate
+        try:
+            car = Car.objects.filter(car_plate__startswith=car_plate).first()
+            return car
+        except Car.DoesNotExist:
+            return None
+
+class Mutation(graphene.ObjectType):
+    create_entry_car = CreateEntryCarMutation.Field()
     
 class AtomicSchema(graphene.Schema):
     def execute(self, *args, **kwargs):

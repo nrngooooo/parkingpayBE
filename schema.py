@@ -24,7 +24,7 @@ class ParkingSessionType(DjangoObjectType):
 # Input for the mutation
 class CreateEntryCarInput(graphene.InputObjectType):
     car_plate = graphene.String(required=True)
-    image = graphene.String(required=True)  # Assume Base64-encoded image
+    entry_photo = graphene.String(required=True)  # Assume Base64-encoded entry_photo
 
 class CreateEntryCarMutation(graphene.Mutation):
     class Arguments:
@@ -35,14 +35,13 @@ class CreateEntryCarMutation(graphene.Mutation):
 
     def mutate(self, info, input):
         car_plate = input["car_plate"]
-        image_data = input["image"]
+        entry_photo = input["entry_photo"]
 
         # Validate car_plate format
-        if not re.match(r"^\d{4}[А-Я]{3}$", car_plate):
-            raise ValueError("Invalid car plate format.")
-        
+        if not re.match(r"^\d{4}$", car_plate):  # Only validate the first 4 digits
+            raise ValueError("Invalid car plate format. Expected 4 digits.")
         try:
-            decoded_image = base64.b64decode(image_data)
+            decoded_image = base64.b64decode(entry_photo)
         except (TypeError, ValueError):
             raise ValueError("Invalid Base64-encoded image.")
         
@@ -76,12 +75,8 @@ class Query(graphene.ObjectType):
         if not re.match(r"^\d{4}$", car_plate):
             raise ValueError("Invalid format. Enter the first 4 digits of the car plate.")
 
-        # Search for the car by the first 4 digits of the car plate
-        try:
-            car = Car.objects.filter(car_plate__startswith=car_plate).first()
-            return car
-        except Car.DoesNotExist:
-            return None
+        car = Car.objects.filter(car_plate__startswith=car_plate).first()
+        return car  # Return None if no match
 
 class Mutation(graphene.ObjectType):
     create_entry_car = CreateEntryCarMutation.Field()

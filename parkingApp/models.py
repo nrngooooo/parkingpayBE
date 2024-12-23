@@ -25,6 +25,30 @@ class ParkingSession(models.Model):
 
     def __str__(self):
         return f"Session {self.id} - {self.car.car_plate}"
+        
+    def calculate_duration(self):
+        """Calculate and save the parking duration in minutes."""
+        if self.exit_time and self.entry_time:
+            self.duration = int((self.exit_time - self.entry_time).total_seconds() // 60)
+            self.save()  # Save the calculated duration
+        return self.duration
+
+    def save(self, *args, **kwargs):
+        """Override save method to ensure duration is calculated before saving."""
+        if self.exit_time:  # Only calculate duration when exit_time is set
+            self.calculate_duration()
+        super().save(*args, **kwargs)
+
+    def calculate_amount(self):
+        if self.duration is None:
+            self.calculate_duration()
+        tariff = Tariff.objects.first()
+        if not tariff:
+            raise ValueError("No tariff configured.")
+        if self.duration <= tariff.free_duration:
+            return 0
+        return ((self.duration - tariff.free_duration) // 60) * tariff.hourly_rate
+
     
 class Payment(models.Model):
     session = models.ForeignKey(ParkingSession, on_delete=models.CASCADE)  # Related parking session

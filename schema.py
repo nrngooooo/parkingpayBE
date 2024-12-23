@@ -10,13 +10,25 @@ import logging
 import re
 import base64
 from django.core.files.base import ContentFile
+from datetime import datetime, timezone
 
 logger = logging.getLogger("main")
 
-
 class ParkingSessionType(DjangoObjectType):
+    duration = graphene.Int()  # Parking duration in minutes
+    amount = graphene.Float()  # Parking amount
     class Meta:
         model = ParkingSession
+
+    def resolve_duration(self, info):
+        end_time = self.exit_time or datetime.now(timezone.utc)
+        total_minutes = (end_time - self.entry_time).total_seconds() // 60
+        return int(total_minutes)  # Return duration in minutes as integer
+
+    def resolve_amount(self, info):
+        payment = Payment.objects.filter(session=self).first()  # Fix to use 'session' field
+        return payment.amount if payment else 0.0
+
 
 class CarType(DjangoObjectType):
     parking_sessions = graphene.List(ParkingSessionType)

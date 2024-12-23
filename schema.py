@@ -10,25 +10,52 @@ import logging
 import re
 import base64
 from django.core.files.base import ContentFile
-from datetime import datetime, timezone
 
 logger = logging.getLogger("main")
 
+class PaymentType(DjangoObjectType):
+    class Meta:
+        model = Payment
+
+class CreatePayment(graphene.Mutation):
+    class Arguments:
+        session_id = graphene.ID()
+
+    payment = graphene.Field(PaymentType)
+
+    def mutate(self, info, session_id):
+        session = ParkingSession.objects.get(id=session_id)
+
+        # Calculate duration if not already done
+        if not session.duration:
+            duration = (session.exit_time - session.entry_time).total_seconds() // 60
+            session.duration = int(duration)
+            session.save()
+
+        # Check for Tariff
+        tariff = Tariff.objects.first()
+        if not tariff:
+            raise Exception("No tariff configured")
+
+        # Calculate amount based on duration and tariff
+        if session.duration <= tariff.free_duration:
+            amount = 0
+        else:
+            extra_minutes = session.duration - tariff.free_duration
+            amount = ((extra_minutes // 60) + (1 if extra_minutes % 60 > 0 else 0)) * tariff.hourly_rate
+
+        # Create the payment entry
+        payment = Payment.objects.create(
+            session=session,
+            amount=amount,
+            payment_time=session.exit_time,  # Set the payment time to the exit time
+        )
+
+        return CreatePayment(payment=payment)
 class ParkingSessionType(DjangoObjectType):
-    duration = graphene.Int()  # Parking duration in minutes
-    amount = graphene.Float()  # Parking amount
     class Meta:
         model = ParkingSession
-
-    def resolve_duration(self, info):
-        end_time = self.exit_time or datetime.now(timezone.utc)
-        total_minutes = (end_time - self.entry_time).total_seconds() // 60
-        return int(total_minutes)  # Return duration in minutes as integer
-
-    def resolve_amount(self, info):
-        payment = Payment.objects.filter(session=self).first()  # Fix to use 'session' field
-        return payment.amount if payment else 0.0
-
+    payment = graphene.Field(PaymentType)
 
 class CarType(DjangoObjectType):
     parking_sessions = graphene.List(ParkingSessionType)
@@ -38,10 +65,34 @@ class CarType(DjangoObjectType):
 
     def resolve_parking_sessions(self, info):
         return self.parkingsession_set.all()
-    
-class PaymentType(DjangoObjectType):
+
+class TariffType(DjangoObjectType):
     class Meta:
-        model = Payment
+        model = Tariff
+
+class PaymentMethodType(DjangoObjectType):
+    class Meta:
+        model = PaymentMethod
+
+class CreatePaymentInput(graphene.InputObjectType):
+    session_id = graphene.Int(required=True)
+    payment_method_id = graphene.Int(required=True)
+
+class CreatePayment(graphene.Mutation):
+    class Arguments:
+        input = CreatePaymentInput()
+
+    payment = graphene.Field(PaymentType)
+
+    def mutate(self, info, input):
+        session = ParkingSession.objects.get(pk=input.session_id)
+        payment_method = PaymentMethod.objects.get(pk=input.payment_method_id)
+
+        payment = Payment.objects.create(
+            session=session,
+            payment_method=payment_method
+        )
+        return CreatePayment(payment=payment)
 
 # Input for the mutation
 class CreateEntryCarInput(graphene.InputObjectType):
@@ -61,7 +112,7 @@ class CreateEntryCarMutation(graphene.Mutation):
 
         # Validate car_plate format
         if not re.match(r"^\d{4}$", car_plate):  # Only validate the first 4 digits
-            raise ValueError("Invalid car plate format. Expected 4 digits.")
+            raise ValueError("Машины дугаарын формат буруу байна. 4 оронтой тоо байх ёстой.")
         try:
             decoded_image = base64.b64decode(entry_photo)
         except (TypeError, ValueError):
@@ -92,6 +143,15 @@ class Query(graphene.ObjectType):
         car_plate=graphene.String(required=True),
     )
 
+    def resolve_all_payments(self, info):
+        return Payment.objects.all()
+
+    def resolve_all_tariffs(self, info):
+        return Tariff.objects.all()
+
+    def resolve_all_payment_methods(self, info):
+        return PaymentMethod.objects.all()
+    
     def resolve_all_sessions(self, info):
         return ParkingSession.objects.select_related("car").all()
 
@@ -105,13 +165,14 @@ class Query(graphene.ObjectType):
     def resolve_search_car_by_plate(self, info, car_plate):
     # Validate car_plate format to ensure it's 4 digits
         if not re.match(r"^\d{4}$", car_plate):
-            raise ValueError("Invalid format. Enter the first 4 digits of the car plate.")
+            raise ValueError("Буруу формат. Машины улсын дугаарын эхний 4 цифрийг оруулна уу.")
 
         car = Car.objects.filter(car_plate__startswith=car_plate).first()
         return car  # Return None if no match
 
 class Mutation(graphene.ObjectType):
     create_entry_car = CreateEntryCarMutation.Field()
+    create_payment = CreatePayment.Field()
     
 class AtomicSchema(graphene.Schema):
     def execute(self, *args, **kwargs):

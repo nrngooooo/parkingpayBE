@@ -25,30 +25,13 @@ class ParkingSession(models.Model):
 
     def __str__(self):
         return f"Session {self.id} - {self.car.car_plate}"
-        
-    def calculate_duration(self):
-        """Calculate and save the parking duration in minutes."""
-        if self.exit_time and self.entry_time:
-            self.duration = int((self.exit_time - self.entry_time).total_seconds() // 60)
-            self.save()  # Save the calculated duration
-        return self.duration
+    
+class Tariff(models.Model):
+    free_duration = models.IntegerField(default=30)  # Free parking duration (in minutes)
+    hourly_rate = models.DecimalField(max_digits=6, decimal_places=2)  # Hourly rate after free duration
 
-    def save(self, *args, **kwargs):
-        """Override save method to ensure duration is calculated before saving."""
-        if self.exit_time:  # Only calculate duration when exit_time is set
-            self.calculate_duration()
-        super().save(*args, **kwargs)
-
-    def calculate_amount(self):
-        if self.duration is None:
-            self.calculate_duration()
-        tariff = Tariff.objects.first()
-        if not tariff:
-            raise ValueError("No tariff configured.")
-        if self.duration <= tariff.free_duration:
-            return 0
-        return ((self.duration - tariff.free_duration) // 60) * tariff.hourly_rate
-
+    def __str__(self):
+        return f"Tariff {self.id}: {self.hourly_rate} per hour"
     
 class Payment(models.Model):
     session = models.ForeignKey(ParkingSession, on_delete=models.CASCADE)  # Related parking session
@@ -61,22 +44,7 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"Payment {self.id} - {self.amount}"
-    
-class Employee(models.Model):
-    name = models.CharField(max_length=100)  # Employee's name
-    car = models.OneToOneField(Car, on_delete=models.SET_NULL, null=True, blank=True)  # Assigned car
-    position = models.CharField(max_length=50, null=True, blank=True)  # Employee's position
-    department = models.CharField(max_length=100, null=True, blank=True)  # Employee's department
 
-    def __str__(self):
-        return self.name
-
-class Tariff(models.Model):
-    free_duration = models.IntegerField(default=30)  # Free parking duration (in minutes)
-    hourly_rate = models.DecimalField(max_digits=6, decimal_places=2)  # Hourly rate after free duration
-
-    def __str__(self):
-        return f"Tariff {self.id}: {self.hourly_rate} per hour"
     
 class Admin(models.Model):
     username = models.CharField(max_length=50, unique=True)  # Admin username

@@ -13,13 +13,23 @@ from django.core.files.base import ContentFile
 
 logger = logging.getLogger("main")
 
-class CarType(DjangoObjectType):
-    class Meta:
-        model = Car
 
 class ParkingSessionType(DjangoObjectType):
     class Meta:
         model = ParkingSession
+
+class CarType(DjangoObjectType):
+    parking_sessions = graphene.List(ParkingSessionType)
+
+    class Meta:
+        model = Car
+
+    def resolve_parking_sessions(self, info):
+        return self.parkingsession_set.all()
+    
+class PaymentType(DjangoObjectType):
+    class Meta:
+        model = Payment
 
 # Input for the mutation
 class CreateEntryCarInput(graphene.InputObjectType):
@@ -61,8 +71,11 @@ class CreateEntryCarMutation(graphene.Mutation):
 class Query(graphene.ObjectType):
     all_sessions = graphene.List(ParkingSessionType)
 
-    # New Query: search_car_by_plate
     search_car_by_plate = graphene.Field(
+        CarType,
+        car_plate=graphene.String(required=True),
+    )
+    car_details = graphene.Field(
         CarType,
         car_plate=graphene.String(required=True),
     )
@@ -70,6 +83,13 @@ class Query(graphene.ObjectType):
     def resolve_all_sessions(self, info):
         return ParkingSession.objects.select_related("car").all()
 
+    def resolve_car_details(self, info, car_plate):
+        try:
+            car = Car.objects.get(car_plate=car_plate)
+            return car
+        except Car.DoesNotExist:
+            return None
+        
     def resolve_search_car_by_plate(self, info, car_plate):
     # Validate car_plate format to ensure it's 4 digits
         if not re.match(r"^\d{4}$", car_plate):

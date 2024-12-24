@@ -132,8 +132,10 @@ class CreateEntryCarMutation(graphene.Mutation):
         return CreateEntryCarMutation(car=car, parking_session=parking_session)
 
 class Query(graphene.ObjectType):
-    all_sessions = graphene.List(ParkingSessionType)
-
+    all_parking_sessions = graphene.List(ParkingSessionType)
+    all_payments = graphene.List(PaymentType)
+    all_tariffs = graphene.List(TariffType)
+    all_payment_methods = graphene.List(PaymentMethodType)
     search_car_by_plate = graphene.Field(
         CarType,
         car_plate=graphene.String(required=True),

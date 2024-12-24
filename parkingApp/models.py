@@ -25,6 +25,15 @@ class ParkingSession(models.Model):
 
     def __str__(self):
         return f"Session {self.id} - {self.car.car_plate}"
+
+class Employee(models.Model):
+    name = models.CharField(max_length=100)  # Employee's name
+    car = models.OneToOneField(Car, on_delete=models.SET_NULL, null=True, blank=True)  # Assigned car
+    position = models.CharField(max_length=50, null=True, blank=True)  # Employee's position
+    department = models.CharField(max_length=100, null=True, blank=True)  # Employee's department
+
+    def __str__(self):
+        return self.name
     
 class Tariff(models.Model):
     free_duration = models.IntegerField(default=30)  # Free parking duration (in minutes)

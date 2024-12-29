@@ -13,49 +13,14 @@ from django.core.files.base import ContentFile
 
 logger = logging.getLogger("main")
 
+class ParkingSessionType(DjangoObjectType):
+    class Meta:
+        model = ParkingSession
+
 class PaymentType(DjangoObjectType):
     class Meta:
         model = Payment
 
-class CreatePayment(graphene.Mutation):
-    class Arguments:
-        session_id = graphene.ID()
-
-    payment = graphene.Field(PaymentType)
-
-    def mutate(self, info, session_id):
-        session = ParkingSession.objects.get(id=session_id)
-
-        # Calculate duration if not already done
-        if not session.duration:
-            duration = (session.exit_time - session.entry_time).total_seconds() // 60
-            session.duration = int(duration)
-            session.save()
-
-        # Check for Tariff
-        tariff = Tariff.objects.first()
-        if not tariff:
-            raise Exception("No tariff configured")
-
-        # Calculate amount based on duration and tariff
-        if session.duration <= tariff.free_duration:
-            amount = 0
-        else:
-            extra_minutes = session.duration - tariff.free_duration
-            amount = ((extra_minutes // 60) + (1 if extra_minutes % 60 > 0 else 0)) * tariff.hourly_rate
-
-        # Create the payment entry
-        payment = Payment.objects.create(
-            session=session,
-            amount=amount,
-            payment_time=session.exit_time,  # Set the payment time to the exit time
-        )
-
-        return CreatePayment(payment=payment)
-class ParkingSessionType(DjangoObjectType):
-    class Meta:
-        model = ParkingSession
-    payment = graphene.Field(PaymentType)
 
 class CarType(DjangoObjectType):
     parking_sessions = graphene.List(ParkingSessionType)
@@ -78,22 +43,11 @@ class CreatePaymentInput(graphene.InputObjectType):
     session_id = graphene.Int(required=True)
     payment_method_id = graphene.Int(required=True)
 
-class CreatePayment(graphene.Mutation):
-    class Arguments:
-        input = CreatePaymentInput()
-
-    payment = graphene.Field(PaymentType)
-
-    def mutate(self, info, input):
-        session = ParkingSession.objects.get(pk=input.session_id)
-        payment_method = PaymentMethod.objects.get(pk=input.payment_method_id)
-
-        payment = Payment.objects.create(
-            session=session,
-            payment_method=payment_method
-        )
-        return CreatePayment(payment=payment)
-
+class SavePaymentInput(graphene.InputObjectType):
+    car_plate = graphene.String(required=True)
+    duration = graphene.Int(required=True)
+    amount = graphene.Float(required=True)
+    payment_time = graphene.DateTime(required=True)
 # Input for the mutation
 class CreateEntryCarInput(graphene.InputObjectType):
     car_plate = graphene.String(required=True)
@@ -131,6 +85,45 @@ class CreateEntryCarMutation(graphene.Mutation):
 
         return CreateEntryCarMutation(car=car, parking_session=parking_session)
 
+# Mutation for saving payment
+from decimal import Decimal
+
+class SavePayment(graphene.Mutation):
+    class Arguments:
+        input = SavePaymentInput(required=True)
+
+    success = graphene.Boolean()
+    message = graphene.String()
+    payment = graphene.Field(PaymentType)
+
+    @staticmethod
+    def mutate(root, info, input):
+        try:
+            # Retrieve the car and its session
+            car = Car.objects.get(car_plate=input.car_plate)
+            last_session = car.parkingsession_set.order_by('-entry_time').first()
+
+            if not last_session:
+                return SavePayment(success=False, message="No active parking session found.", payment=None)
+
+            # Convert the amount to a Decimal
+            amount = Decimal(str(input.amount))  # Ensure amount is a Decimal
+
+            # Ensure that the Payment model has these fields
+            payment = Payment.objects.create(
+                car=car,
+                parking_session=last_session,  # Use 'session' instead of 'parking_session'
+                amount=amount,  # Set the amount as a Decimal
+                payment_time=input.payment_time,
+                duration=input.duration,
+            )
+
+            return SavePayment(success=True, message="Payment saved successfully.", payment=payment)
+        except Car.DoesNotExist:
+            return SavePayment(success=False, message="Car not found.", payment=None)
+        except Exception as e:
+            return SavePayment(success=False, message=f"Error: {str(e)}", payment=None)
+
 class Query(graphene.ObjectType):
     all_parking_sessions = graphene.List(ParkingSessionType)
     all_payments = graphene.List(PaymentType)
@@ -144,7 +137,6 @@ class Query(graphene.ObjectType):
         CarType,
         car_plate=graphene.String(required=True),
     )
-
     def resolve_all_payments(self, info):
         return Payment.objects.all()
 
@@ -174,7 +166,7 @@ class Query(graphene.ObjectType):
 
 class Mutation(graphene.ObjectType):
     create_entry_car = CreateEntryCarMutation.Field()
-    create_payment = CreatePayment.Field()
+    save_payment = SavePayment.Field()
     
 class AtomicSchema(graphene.Schema):
     def execute(self, *args, **kwargs):

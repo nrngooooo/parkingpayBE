@@ -18,7 +18,6 @@ class PaymentMethod(models.Model):
 class ParkingSession(models.Model):
     car = models.ForeignKey(Car, on_delete=models.CASCADE)  # Related car
     entry_time = models.DateTimeField(auto_now_add=True)  # Entry time
-    duration = models.IntegerField(null=True, blank=True)  # Parking duration in minutes
     paid_status = models.BooleanField(default=False)  # Payment status
     exit_time = models.DateTimeField(null=True, blank=True)  # Exit time
     exit_photo = models.ImageField(upload_to='car_photos/exit/', null=True, blank=True)  # Exit photo
@@ -43,9 +42,11 @@ class Tariff(models.Model):
         return f"Tariff {self.id}: {self.hourly_rate} per hour"
     
 class Payment(models.Model):
-    session = models.ForeignKey(ParkingSession, on_delete=models.CASCADE)  # Related parking session
+    car = models.ForeignKey(Car, on_delete=models.CASCADE, default=1)  # Related car
+    parking_session = models.ForeignKey(ParkingSession, on_delete=models.CASCADE)  # Related parking session
     amount = models.DecimalField(max_digits=8, decimal_places=2)  # Payment amount
     payment_time = models.DateTimeField(auto_now_add=True)  # Payment timestamp
+    duration = models.IntegerField(null=True, blank=True)  # Parking duration in minutes
     status = models.CharField(max_length=20, default='pending')  # Payment status
     payment_method = models.ForeignKey(PaymentMethod, on_delete=models.SET_NULL, null=True, blank=True)  # Payment method
     is_within_free_period = models.BooleanField(default=False)  # Free period flag
@@ -54,7 +55,6 @@ class Payment(models.Model):
     def __str__(self):
         return f"Payment {self.id} - {self.amount}"
 
-    
 class Admin(models.Model):
     username = models.CharField(max_length=50, unique=True)  # Admin username
     password_hash = models.TextField()  # Password hash
